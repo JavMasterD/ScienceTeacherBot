@@ -1,0 +1,5 @@
+python-telegram-bot
+pillow
+schedule
+python-docx
+pdfplumber
