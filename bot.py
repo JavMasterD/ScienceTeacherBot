@@ -1,14 +1,19 @@
-# ✅ ScienceTeacherBot - إصدار كامل
-# يعمل كمساعد علوم ذكي داخل مجموعات Telegram
-# يدعم الأسئلة التفاعلية، مراجعات، مسابقات، حفظ الأسئلة، تحكم بالجروبات
+import asyncio
+import json
+from datetime import datetime
 
 from pyrogram import Client, filters
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
-from datetime import datetime, timedelta
-import json, random, os, asyncio
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# ✅ تحميل الإعدادات من config.json
-with open("config.json", "r") as f:
+from group_manager import GroupManager
+from champion_manager import add_correct_answer, get_week_champion, reset_weekly_data
+from quiz_generator import QuizGenerator
+from quotes_manager import QuotesManager
+from review_game import ReviewGame
+from weekly_quiz import WeeklyQuiz
+
+# تحميل الإعدادات
+with open("config.json", "r", encoding="utf-8") as f:
     config = json.load(f)
 
 BOT_TOKEN = config["bot_token"]
@@ -18,106 +23,204 @@ OWNER_ID = config["owner_id"]
 
 app = Client("ScienceTeacherBot", bot_token=BOT_TOKEN, api_id=API_ID, api_hash=API_HASH)
 
-# ✅ تحميل أو تهيئة ملف الأسئلة
+# تحميل بيانات الأسئلة
 QUESTIONS_FILE = "questions_group.json"
-if not os.path.exists(QUESTIONS_FILE):
-    with open(QUESTIONS_FILE, "w", encoding="utf-8") as f:
-        json.dump({}, f, ensure_ascii=False, indent=2)
+try:
+    with open(QUESTIONS_FILE, "r", encoding="utf-8") as f:
+        questions_data = json.load(f)
+except FileNotFoundError:
+    questions_data = {}
 
-with open(QUESTIONS_FILE, "r", encoding="utf-8") as f:
-    questions_data = json.load(f)
+quiz_generator = QuizGenerator(questions_data)
+quotes_manager = QuotesManager()
+review_game = ReviewGame()
+group_manager = GroupManager()
+weekly_quiz = WeeklyQuiz(questions_data)
 
-# ✅ قائمة تحفيزية
-motivation_msgs = [
-    "أحسنت! استمر في التفوق!",
-    "👏 أنت نجم العلوم اليوم!",
-    "ممتاز! keep going",
-    "💡 العلم نور... وأنت منوره!"
-]
-
-# ✅ المستخدمين المشاركين في spinner
-spinner_used = {}
-
-def save_questions():
-    with open(QUESTIONS_FILE, "w", encoding="utf-8") as f:
-        json.dump(questions_data, f, ensure_ascii=False, indent=2)
-
-# ✅ استخراج الصف والترم من اسم الجروب
+# دالة مساعدة لاستخراج الصف والترم من عنوان الجروب
 def extract_class_term(group_title):
-    grade = next((s for s in ["الرابع", "الخامس", "السادس", "الأول", "الثاني", "الثالث"] if s in group_title), None)
-    term = "الترم الأول" if "ترم أول" in group_title else ("الترم الثاني" if "ترم ثاني" in group_title else "غير محدد")
-    return grade or "غير معروف", term
+    grades = ["الرابع", "الخامس", "السادس", "الأول", "الثاني", "الثالث"]
+    grade = next((g for g in grades if g in group_title), "غير معروف")
+    if "ترم أول" in group_title:
+        term = "الترم الأول"
+    elif "ترم ثاني" in group_title:
+        term = "الترم الثاني"
+    else:
+        term = "غير محدد"
+    return grade, term
 
-# ✅ حفظ سؤال من الرسالة
-def add_question_from_message(msg: Message):
-    if msg.reply_to_message and msg.reply_to_message.text:
-        q_text = msg.reply_to_message.text
-        grade, term = extract_class_term(msg.chat.title or "")
-        key = f"{msg.chat.id}_{grade}_{term}"
-        questions_data.setdefault(key, []).append(q_text)
-        save_questions()
-        return True
-    return False
+# دالة تحقق من أن الجروب مفعل وموافق عليه
+def check_group_allowed(chat_id):
+    # السماح تلقائيًا للجروبات المحددة حسب الاسم
+    # إذا لم يكن، نتحقق من الموافقة اليدوية
+    # نحتاج جلب عنوان الجروب هنا لكن هذا sync فسنعتمد على group_manager فقط
+    return group_manager.is_group_approved(chat_id)
 
-# ✅ إرسال سؤال عشوائي
-async def send_random_question(chat_id):
-    grade, term = extract_class_term((await app.get_chat(chat_id)).title or "")
-    key = f"{chat_id}_{grade}_{term}"
-    if key in questions_data and questions_data[key]:
-        question = random.choice(questions_data[key])
-        await app.send_message(chat_id, f"❓ {question}", reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("إظهار الإجابة ✅", callback_data="show_answer")]
-        ]))
-
-# ✅ /start
+# أمر /start في الخاص
 @app.on_message(filters.command("start") & filters.private)
 async def start_cmd(client, message):
     await message.reply("👋 أهلاً بك في معلم العلوم الذكي! أضفني إلى جروب وابدأ بـ /quiz")
 
-# ✅ /add - حفظ سؤال برد على رسالة
+# أمر /getid في الجروب لعرض معرف الجروب
+@app.on_message(filters.command("getid") & filters.group)
+async def getid_cmd(client, message):
+    await message.reply(f"معرف هذا الجروب هو:\n`{message.chat.id}`", parse_mode="markdown")
+
+# أمر /approve للموافقة على الجروب (للمشرف فقط)
+@app.on_message(filters.command("approve") & filters.group)
+async def approve_cmd(client, message):
+    # تحقق صلاحية المشرف (ممكن تضيف دالة تحقق أكثر تعقيدًا)
+    chat_member = await client.get_chat_member(message.chat.id, message.from_user.id)
+    if chat_member.status not in ["administrator", "creator"]:
+        await message.reply("❌ هذا الأمر خاص بالمشرفين فقط.")
+        return
+
+    group_manager.approve_group(message.chat.id)
+    await message.reply("✅ تم الموافقة على الجروب لمدة 29 يومًا.")
+
+# أمر /add لحفظ سؤال (رد على رسالة)
 @app.on_message(filters.command("add") & filters.group)
 async def add_cmd(client, message):
-    if add_question_from_message(message):
+    if not check_group_allowed(message.chat.id):
+        await message.reply("🚫 هذا الجروب غير مفعل، يرجى انتظار الموافقة.")
+        return
+
+    if message.reply_to_message and message.reply_to_message.text:
+        grade, term = extract_class_term(message.chat.title or "")
+        key = f"{message.chat.id}_{grade}_{term}"
+        questions_data.setdefault(key, []).append(message.reply_to_message.text)
+        with open(QUESTIONS_FILE, "w", encoding="utf-8") as f:
+            json.dump(questions_data, f, ensure_ascii=False, indent=2)
         await message.reply("✅ تم حفظ السؤال للجروب.")
     else:
         await message.reply("❗️ من فضلك رد على رسالة تحتوي على السؤال.")
 
-# ✅ /quiz - إرسال سؤال عشوائي
+# أمر /quiz لإرسال سؤال عشوائي
 @app.on_message(filters.command("quiz") & filters.group)
 async def quiz_cmd(client, message):
-    await send_random_question(message.chat.id)
+    if not check_group_allowed(message.chat.id):
+        await message.reply("🚫 هذا الجروب غير مفعل، يرجى انتظار الموافقة.")
+        return
 
-# ✅ /review - spinner لمراجعة اسم طالب
-@app.on_message(filters.command("review") & filters.group)
-async def review_cmd(client, message):
-    members = [m.user.first_name for m in await app.get_chat_members(message.chat.id, limit=50) if m.user and not m.user.is_bot]
-    if members:
-        last_used = spinner_used.get(message.chat.id)
-        name = random.choice([n for n in members if n != last_used] or members)
-        spinner_used[message.chat.id] = name
-        await message.reply(f"🎯 الدور على: {name}! استعد للسؤال! 🧠")
+    grade, term = extract_class_term(message.chat.title or "")
+    question_entry = quiz_generator.get_random_question(message.chat.id, grade, term)
 
-# ✅ الرد على زر إظهار الإجابة
+    if not question_entry:
+        await message.reply("لا توجد أسئلة متاحة لهذه الفئة.")
+        return
+
+    text = f"❓ {question_entry['question']}\n"
+    for idx, option in enumerate(question_entry.get("options", []), 1):
+        text += f"{idx}. {option}\n"
+
+    await message.reply(text, reply_markup=InlineKeyboardMarkup([
+        [InlineKeyboardButton("إظهار الإجابة ✅", callback_data=f"show_answer_{question_entry.get('answer', '')}")]
+    ]))
+
+# الرد على زر "إظهار الإجابة"
 @app.on_callback_query()
 async def callback_handler(client, callback_query):
-    await callback_query.answer("الإجابة يمكن أن تكون في الرسالة التالية!", show_alert=True)
-    await callback_query.message.reply(random.choice(motivation_msgs))
+    data = callback_query.data
+    if data.startswith("show_answer_"):
+        answer = data[len("show_answer_"):]
+        await callback_query.answer("الإجابة:", show_alert=True)
+        await callback_query.message.reply(f"الإجابة الصحيحة هي:\n{answer}")
+        quote = quotes_manager.get_random_quote()
+        await callback_query.message.reply(quote)
 
-# ✅ إرسال 20 سؤال يوميًا عند بدء التشغيل (مثال فقط - قابل للتعديل بزمن محدد)
-async def daily_questions():
+# أمر /review لاختيار عضو عشوائي للدور
+@app.on_message(filters.command("review") & filters.group)
+async def review_cmd(client, message):
+    if not check_group_allowed(message.chat.id):
+        await message.reply("🚫 هذا الجروب غير مفعل، يرجى انتظار الموافقة.")
+        return
+
+    members = [m.user.first_name for m in await client.get_chat_members(message.chat.id, limit=50)
+               if m.user and not m.user.is_bot]
+    if not members:
+        await message.reply("لا يوجد أعضاء كافيين للمراجعة.")
+        return
+
+    chosen = review_game.choose_random_player(members, message.chat.id)
+    await message.reply(f"🎯 الدور على: {chosen}! استعد للسؤال! 🧠")
+
+# أمر /champion لإظهار بطل الأسبوع
+@app.on_message(filters.command("champion") & filters.group)
+async def champion_cmd(client, message):
+    if not check_group_allowed(message.chat.id):
+        await message.reply("🚫 هذا الجروب غير مفعل، يرجى انتظار الموافقة.")
+        return
+
+    user_id, score = get_week_champion(message.chat.id)
+    if user_id:
+        user = await client.get_users(user_id)
+        await message.reply(f"🏆 بطل الأسبوع هو: {user.first_name} 🎉\nعدد الإجابات الصحيحة: {score}")
+    else:
+        await message.reply("لا توجد بيانات كافية لعرض بطل الأسبوع.")
+
+# أمر /startweeklyquiz لبدء المسابقة الأسبوعية
+@app.on_message(filters.command("startweeklyquiz") & filters.group)
+async def start_weekly_quiz(client, message):
+    if not check_group_allowed(message.chat.id):
+        await message.reply("🚫 هذا الجروب غير مفعل، يرجى انتظار الموافقة.")
+        return
+
+    grade, term = extract_class_term(message.chat.title or "")
+    quiz_questions = weekly_quiz.generate_quiz(message.chat.id, grade, term, num_questions=10)
+    if not quiz_questions:
+        await message.reply("لا توجد أسئلة كافية للمسابقة الأسبوعية.")
+        return
+
+    await message.reply("🔔 تبدأ المسابقة الأسبوعية! أجب على الأسئلة التالية:")
+
+    for q in quiz_questions:
+        text = f"❓ {q['question']}\n"
+        for idx, option in enumerate(q.get("options", []), 1):
+            text += f"{idx}. {option}\n"
+        await message.reply(text)
+        await asyncio.sleep(5)
+
+    await message.reply("✅ انتهت المسابقة! أرسل إجاباتك الآن.")
+
+# أمر /weeklywinner لإعلان الفائز
+@app.on_message(filters.command("weeklywinner") & filters.group)
+async def announce_winner(client, message):
+    if not check_group_allowed(message.chat.id):
+        await message.reply("🚫 هذا الجروب غير مفعل، يرجى انتظار الموافقة.")
+        return
+
+    user_id, score = weekly_quiz.get_winner(message.chat.id)
+    if user_id:
+        user = await client.get_users(user_id)
+        await message.reply(f"🏆 بطل المسابقة الأسبوعية هو: {user.first_name} 🎉\nالنقاط: {score}")
+    else:
+        await message.reply("لا توجد نتائج للمسابقة الأسبوعية حتى الآن.")
+
+# تسجيل إجابة صحيحة (يجب تعديل لتلائم طريقة البوت للتحقق من الإجابة)
+@app.on_message(filters.text & filters.group)
+async def track_correct_answers(client, message):
+    # هنا مثال بسيط: إذا كانت الرسالة تحتوي على "صح" أو "صحيح" نعتبرها إجابة صحيحة
+    text = message.text.lower()
+    if "صح" in text or "صحيح" in text:
+        add_correct_answer(message.chat.id, message.from_user.id)
+
+# مهمة دورية لإعادة ضبط بطل الأسبوع كل 7 أيام
+async def weekly_reset_task():
     while True:
-        for key in questions_data:
-            chat_id = int(key.split("_")[0])
-            for _ in range(20):
-                await send_random_question(chat_id)
-                await asyncio.sleep(2)  # تأخير بين الأسئلة
-        await asyncio.sleep(24 * 60 * 60)  # كل 24 ساعة
+        now = datetime.now()
+        # إعادة الضبط كل يوم أحد منتصف الليل مثلاً (يمكن تعديل الوقت)
+        if now.weekday() == 6 and now.hour == 0 and now.minute == 0:
+            reset_weekly_data()
+        await asyncio.sleep(60)
 
-# ✅ بدء تشغيل البوت
+# بدء تشغيل البوت
 async def main():
     await app.start()
     print("✅ البوت يعمل...")
-    asyncio.create_task(daily_questions())
+
+    # مهمة إعادة الضبط الأسبوعية في الخلفية
+    asyncio.create_task(weekly_reset_task())
+
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
