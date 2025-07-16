@@ -115,8 +115,7 @@ async def approve_cmd(client, message):
     chat_id = int(message.command[1])
     group_manager.approve_group(chat_id)
     await message.reply(f"✅ تم السماح للجروب: {chat_id}")
-
-# مهمة أسبوعية لإعادة الضبط
+# ✅ مهمة أسبوعية لإعادة تعيين البطل كل أسبوع
 async def weekly_reset_task():
     while True:
         now = datetime.now()
@@ -124,12 +123,16 @@ async def weekly_reset_task():
             reset_weekly_data()
         await asyncio.sleep(60)
 
-# بدء التشغيل
+# ✅ الدالة الرئيسية لتشغيل البوت
 async def main():
     await app.start()
     print("✅ البوت يعمل...")
     asyncio.create_task(weekly_reset_task())
-    await asyncio.Event().wait()
 
+    # ⬇️ هذا هو المكان الصحيح لوضع while True:
+    while True:
+        await asyncio.sleep(60)
+
+# ✅ تشغيل البوت إذا كان هذا الملف هو الرئيسي
 if __name__ == "__main__":
     asyncio.run(main())
