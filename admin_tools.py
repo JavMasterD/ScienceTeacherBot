@@ -1,31 +1,26 @@
-from group_manager import approve_group, remove_group
-from pyrogram.types import Message
 import json
+from pyrogram import Client, filters
 
-# ✅ تحميل OWNER_ID من ملف الإعدادات
-with open("config.json", "r", encoding="utf-8") as f:
+from group_manager import approve_group_id
+with open("config.json", "r") as f:
     config = json.load(f)
 
-OWNER_ID = config.get("owner_id")
+BOT_TOKEN = config["bot_token"]
+API_ID = config["api_id"]
+API_HASH = config["api_hash"]
+OWNER_ID = config["owner_id"]
 
-def is_owner(user_id):
-    return user_id == OWNER_ID
-
-# ✅ أمر لتفعيل الجروب
-async def handle_approve_command(message: Message):
-    if not is_owner(message.from_user.id):
-        await message.reply("🚫 هذا الأمر مخصص للمدير فقط.")
+app = Client(
+    name="anon",
+    bot_token=BOT_TOKEN,
+    api_id=API_ID,
+    api_hash=API_HASH,
+    workdir="."
+)
+async def approve_group(app, message):
+    if message.from_user.id != OWNER_ID:
+        await message.reply("❌ فقط مالك البوت يمكنه اعتماد الجروب.")
         return
-
-    title = message.chat.title or "جروب بدون اسم"
-    approve_group(message.chat.id, title, permanent=False)
-    await message.reply("✅ تم تفعيل هذا الجروب لمدة 29 يومًا.")
-
-# ✅ أمر لإلغاء التفعيل
-async def handle_remove_command(message: Message):
-    if not is_owner(message.from_user.id):
-        await message.reply("🚫 هذا الأمر مخصص للمدير فقط.")
-        return
-
-    remove_group(message.chat.id)
-    await message.reply("❌ تم إلغاء تفعيل هذا الجروب.")
+    group_id = message.chat.id
+    approve_group_id(group_id)
+    await message.reply("✅ تم اعتماد هذا الجروب بنجاح.")
