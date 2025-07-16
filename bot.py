@@ -30,6 +30,10 @@ app = Client(
 @app.on_message(filters.all)
 async def debug_all(client, message):
     print("📩 تم استلام رسالة:", message.text)
+    
+@app.on_message(filters.command("ping") & filters.group)
+async def ping_handler(client, message):
+    await message.reply("✅ البوت يعمل الآن بكفاءة!")
 
 # ✅ رسالة بدء خاصة
 @app.on_message(filters.command("startMyBot") & filters.private)
