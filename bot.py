@@ -21,7 +21,7 @@ API_HASH = config["api_hash"]
 OWNER_ID = config["owner_id"]
 
 app = Client(
-    name="anon",
+    name=":memory:",  # استخدام جلسة مؤقتة غير محفوظة
     bot_token=BOT_TOKEN,
     api_id=API_ID,
     api_hash=API_HASH,
