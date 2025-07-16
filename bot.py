@@ -19,7 +19,13 @@ API_ID = config["api_id"]
 API_HASH = config["api_hash"]
 OWNER_ID = config["owner_id"]
 
-app = Client("ScienceTeacherBot", bot_token=BOT_TOKEN, api_id=API_ID, api_hash=API_HASH)
+app = Client(
+    name="anon",  # اسم افتراضي لا يحفظ جلسة
+    bot_token=BOT_TOKEN,
+    api_id=API_ID,
+    api_hash=API_HASH,
+    workdir="."  # يمنع إنشاء ملف session
+)
 
 # تحميل الأسئلة
 QUESTIONS_FILE = "questions_group.json"
