@@ -1,15 +1,18 @@
-
 import random
+from pyrogram import Client
 
-class ReviewGame:
-    def __init__(self):
-        self.current_player = {}
+# ✅ اختيار طالب عشوائي من أعضاء الجروب
+async def pick_random_student(app: Client, chat_id: int) -> str:
+    try:
+        members = []
+        async for m in app.get_chat_members(chat_id):
+            if m.user and not m.user.is_bot:
+                members.append(m.user.first_name)
 
-    def choose_random_player(self, members, chat_id):
-        last_player = self.current_player.get(chat_id)
-        candidates = [m for m in members if m != last_player]
-        if not candidates:
-            candidates = members
-        chosen = random.choice(candidates)
-        self.current_player[chat_id] = chosen
-        return chosen
+        if not members:
+            return "لا يوجد طلاب"
+
+        return random.choice(members)
+    except Exception as e:
+        print(f"[review_game] Error: {e}")
+        return "حدث خطأ أثناء اختيار الطالب"

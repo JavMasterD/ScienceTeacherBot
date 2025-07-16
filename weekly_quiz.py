@@ -1,50 +1,49 @@
-
 import json
 import os
-import random
-from datetime import datetime
+from datetime import datetime, timedelta
 
-WEEKLY_QUIZ_FILE = "weekly_quiz_data.json"
+CHAMPION_FILE = "weekly_scores.json"
 
-class WeeklyQuiz:
-    def __init__(self, questions_data):
-        self.questions_data = questions_data
-        self.results = self.load_results()
+# ✅ تحميل البيانات أو تهيئتها
+if not os.path.exists(CHAMPION_FILE):
+    with open(CHAMPION_FILE, "w", encoding="utf-8") as f:
+        json.dump({}, f, ensure_ascii=False, indent=2)
 
-    def load_results(self):
-        if os.path.exists(WEEKLY_QUIZ_FILE):
-            with open(WEEKLY_QUIZ_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        return {}
+with open(CHAMPION_FILE, "r", encoding="utf-8") as f:
+    weekly_scores = json.load(f)
 
-    def save_results(self):
-        with open(WEEKLY_QUIZ_FILE, "w", encoding="utf-8") as f:
-            json.dump(self.results, f, ensure_ascii=False, indent=2)
+def save_scores():
+    with open(CHAMPION_FILE, "w", encoding="utf-8") as f:
+        json.dump(weekly_scores, f, ensure_ascii=False, indent=2)
 
-    def generate_quiz(self, chat_id, grade, term, num_questions=10):
-        key = f"{chat_id}_{grade}_{term}"
-        if key not in self.questions_data or not self.questions_data[key]:
-            return []
-        questions_pool = self.questions_data[key][:]
-        random.shuffle(questions_pool)
-        return questions_pool[:num_questions]
+# ✅ تسجيل إجابة صحيحة
+def add_correct_answer(user_id, user_name, group_id):
+    group_key = str(group_id)
+    if group_key not in weekly_scores:
+        weekly_scores[group_key] = {}
 
-    def record_score(self, chat_id, user_id, score):
-        chat_str = str(chat_id)
-        user_str = str(user_id)
-        if chat_str not in self.results:
-            self.results[chat_str] = {}
-        self.results[chat_str][user_str] = score
-        self.save_results()
+    user_key = str(user_id)
+    user_data = weekly_scores[group_key].get(user_key, {"name": user_name, "score": 0})
+    user_data["score"] += 1
+    user_data["name"] = user_name  # تحديث الاسم
+    weekly_scores[group_key][user_key] = user_data
+    save_scores()
 
-    def get_winner(self, chat_id):
-        chat_str = str(chat_id)
-        if chat_str not in self.results or not self.results[chat_str]:
-            return None, 0
-        sorted_users = sorted(self.results[chat_str].items(), key=lambda x: x[1], reverse=True)
-        top_user, top_score = sorted_users[0]
-        return int(top_user), top_score
+# ✅ عرض بطل الأسبوع
+async def handle_weekly_champion(group_id):
+    group_key = str(group_id)
+    if group_key not in weekly_scores or not weekly_scores[group_key]:
+        return "📊 لا توجد مشاركات هذا الأسبوع."
 
-    def reset_weekly_results(self):
-        self.results = {}
-        self.save_results()
+    sorted_users = sorted(weekly_scores[group_key].items(), key=lambda x: x[1]["score"], reverse=True)
+    top_user = sorted_users[0]
+    name = top_user[1]["name"]
+    score = top_user[1]["score"]
+
+    return f"🏆 بطل الأسبوع هو: {name} بإجمالي {score} نقطة!"
+
+# ✅ إعادة تعيين النقاط أسبوعيًا (للاستخدام الآلي)
+def reset_weekly_scores():
+    global weekly_scores
+    weekly_scores = {}
+    save_scores()
