@@ -27,6 +27,10 @@ app = Client(
     api_hash=API_HASH,
     workdir="."
 )
+@app.on_message(filters.all)
+async def debug_all(client, message):
+    print("📩 تم استلام رسالة:", message.text)
+
 # ✅ رسالة بدء خاصة
 @app.on_message(filters.command("startMyBot") & filters.private)
 async def start_private(client, message):
