@@ -12,6 +12,8 @@ import json
 import asyncio
 from datetime import datetime, timedelta, timezone
 
+print("تم تشغيل الكود 😊")
+
 with open("config.json", "r") as f:
     config = json.load(f)
 
@@ -21,29 +23,35 @@ API_HASH = config["api_hash"]
 OWNER_ID = config["owner_id"]
 
 app = Client(
-    name="ScienceBotTeacher",  
+    name="Science",
     bot_token=BOT_TOKEN,
     api_id=API_ID,
     api_hash=API_HASH,
     workdir="."
 )
+
+
 @app.on_message(filters.all)
 async def debug_all(client, message):
-    print("📩 تم استلام رسالة:", message.text)
-    
+    print(f"[📩] Received message from chat {message.chat.id}: {message.text}")
+
+
 @app.on_message(filters.command("ping") & filters.group)
 async def ping_handler(client, message):
     await message.reply("✅ البوت يعمل الآن بكفاءة!")
+
 
 # ✅ رسالة بدء خاصة
 @app.on_message(filters.command("startMyBot") & filters.private)
 async def start_private(client, message):
     await message.reply("👋 أهلاً بك في معلم العلوم الذكي! أضفني إلى جروبك وابدأ بـ /quizStart")
 
+
 # ✅ اعتماد الجروب - للمشرف فقط
 @app.on_message(filters.command("approveGroup") & filters.group)
 async def approve_group_cmd(client, message):
     await approve_group(app, message)
+
 
 # ✅ إضافة سؤال برد
 @app.on_message(filters.command("addQues") & filters.group)
@@ -56,6 +64,7 @@ async def add_question_cmd(client, message):
     else:
         await message.reply("❗️ من فضلك رد على رسالة تحتوي على السؤال.")
 
+
 # ✅ إرسال سؤال عشوائي
 @app.on_message(filters.command("quizStart") & filters.group)
 async def quiz_cmd(client, message):
@@ -63,10 +72,12 @@ async def quiz_cmd(client, message):
         return await message.reply("❌ هذا الجروب غير معتمد.")
     await send_random_question(app, message.chat.id)
 
+
 # ✅ اقتباس عشوائي
 @app.on_message(filters.command("quote") & filters.group)
 async def quote_cmd(client, message):
     await message.reply(f"🧠 اقتباس اليوم:\n\n{get_random_quote()}")
+
 
 # ✅ مراجعة طالب عشوائي
 @app.on_message(filters.command("reviewNow") & filters.group)
@@ -77,32 +88,49 @@ async def review_now(client, message):
     else:
         await message.reply("❗️ لا يوجد طلاب متاحين حاليًا.")
 
+
 # ✅ عرض نقاط الطالب
 @app.on_message(filters.command("myPoints") & filters.group)
 async def points_cmd(client, message):
     await show_user_stats(message)
+
 
 # ✅ عرض بطل الأسبوع
 @app.on_message(filters.command("weeklyChampion") & filters.group)
 async def champion_cmd(client, message):
     await handle_weekly_champion(app, message.chat.id)
 
+
 # ✅ مهمة إعادة تعيين أسبوعية
 async def weekly_reset_task():
+    print("تم تشغيل المهمة الاسبوعية")
     while True:
         now = datetime.now(timezone.utc)
+
+        # تحديد الجمعة القادمة
         next_friday = now + timedelta((4 - now.weekday()) % 7)
         reset_time = datetime.combine(next_friday.date(), datetime.min.time(), tzinfo=timezone.utc) + timedelta(hours=5)
+
+        # لو كنا بعد الجمعة 5 صباحًا، نحسب الجمعة التالية
+        if now >= reset_time:
+            next_friday += timedelta(days=7)
+            reset_time = datetime.combine(next_friday.date(), datetime.min.time(), tzinfo=timezone.utc) + timedelta(
+                hours=5)
+
         wait_time = (reset_time - now).total_seconds()
+        print(f"سوف يتم إعادة التعيين الأسبوعي بعد {wait_time / 3600:.2f} ساعة")
+
         await asyncio.sleep(wait_time)
         reset_weekly_scores()
+
 
 # ✅ تشغيل البوت
 async def main():
     await app.start()
     print("✅ البوت يعمل...")
-    asyncio.create_task(weekly_reset_task())
+    asyncio.create_task(weekly_reset_task())  # ← بدون await
     await asyncio.Event().wait()
+
 
 if __name__ == "__main__":
     asyncio.run(main())
